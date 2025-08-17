@@ -2,7 +2,7 @@
 #include <string>
 
 #include <WiFi.h>
-#define MQTT_MAX_PACKET_SIZE 1844
+// #define MQTT_MAX_PACKET_SIZE 2048
 #include <PubSubClient.h>
 // Bluetooth LE
 #include <BLEDevice.h>
@@ -73,6 +73,8 @@ public:
 void setup() {
   Serial.begin(115200);
   BLEDevice::init(""); // Can only be called once
+  // Set MQTT buffer size to 2048 bytes
+  client.setBufferSize(2048);
 }
 
 void connectWiFi() {
@@ -153,8 +155,11 @@ void loop() {
   payloadString += "\"}";
   
   // Print and publish payload
-  Serial.print("MAX len: ");
-  Serial.println(MQTT_MAX_PACKET_SIZE);
+  // Serial.print("Compile-time MAX len: ");
+  // Serial.println(MQTT_MAX_PACKET_SIZE);  // This will always show 256 (the #define)
+  
+  Serial.print("Runtime buffer size: ");
+  Serial.println(client.getBufferSize());  // This will show 2048 after setBufferSize()
   
   Serial.print("Payload length: ");
   Serial.println(payloadString.length());
