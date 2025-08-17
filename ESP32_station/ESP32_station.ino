@@ -102,7 +102,7 @@ void ScanBeacons() {
   MyAdvertisedDeviceCallbacks cb;
   pBLEScan->setAdvertisedDeviceCallbacks(&cb);
   pBLEScan->setActiveScan(true); //active scan uses more power, but get results faster
-  BLEScanResults foundDevices = pBLEScan->start(beaconScanTime);
+  BLEScanResults* foundDevices = pBLEScan->start(beaconScanTime);
   Serial.print("Devices found: ");
   //Serial.print(cb.getConcatedMessage());
   for (uint8_t i = 0; i < bufferIndex; i++) {
