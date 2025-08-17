@@ -64,14 +64,17 @@ public:
     
     bufferIndex++;
     // Print everything via serial port for debugging
-    Serial.printf("MAC: %s \n", advertisedDevice.getAddress().toString().c_str());
-    Serial.printf("name: %s \n", advertisedDevice.getName().c_str());
-    Serial.printf("RSSI: %d \n", advertisedDevice.getRSSI());
+    // Serial.printf("MAC: %s \n", advertisedDevice.getAddress().toString().c_str());
+    // Serial.printf("name: %s \n", advertisedDevice.getName().c_str());
+    // Serial.printf("RSSI: %d \n", advertisedDevice.getRSSI());
   }
 };
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("ESP32 Station Starting...");
+  Serial.print("WiFi MAC Address: ");
+  Serial.println(WiFi.macAddress());
   BLEDevice::init(""); // Can only be called once
   // Set MQTT buffer size to 2048 bytes
   client.setBufferSize(2048);
@@ -84,12 +87,24 @@ void connectWiFi() {
     Serial.println("Connecting to WiFi..");
   }
   Serial.println("Connected to the WiFi network");
+  Serial.print("My MAC Address: ");
+  Serial.println(WiFi.macAddress());
 }
 
 void connectMQTT() {
   client.setServer(mqttServer, mqttPort);
   Serial.println("Connecting to MQTT...");
-  if (client.connect("ESP32Client", mqttUser, mqttPassword)) {
+  Serial.print("Station MAC: ");
+  Serial.println(WiFi.macAddress());
+  
+  // Create unique client ID using MAC address
+  String clientId = "ESP32_" + WiFi.macAddress();
+  clientId.replace(":", ""); // Remove colons from MAC address
+  
+  Serial.print("MQTT Client ID: ");
+  Serial.println(clientId);
+  
+  if (client.connect(clientId.c_str(), mqttUser, mqttPassword)) {
     Serial.println("connected");
   } else {
     Serial.print("failed with state ");
