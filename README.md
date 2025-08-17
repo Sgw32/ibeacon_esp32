@@ -22,20 +22,71 @@ $ sudo apt install mosquitto
 Other Platforms
 * For other platforms e.g. Windows, check out https://mosquitto.org/download/
 
-#### NPM for running the web dashboard
+#### Node.js and NPM for running the web dashboard
+
+**⚠️ Important: Node.js Version Compatibility**
+
+This project was built with older dependencies and requires **Node.js 16** to run properly. Modern Node.js versions (18+) will cause compatibility issues.
+
+##### Option 1: Use Node.js 16 (Recommended)
+
+Install Node Version Manager (nvm) and use Node.js 16:
+
+**MacOS/Linux:**
+```bash
+# Install nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+
+# Restart terminal or source profile
+source ~/.zshrc  # or ~/.bash_profile
+
+# Install and use Node.js 16
+nvm install 16
+nvm use 16
+
+# Verify version
+node --version  # Should show v16.x.x
+```
+
+**Alternative installation via package managers:**
+
 MacOS using [homebrew](https://brew.sh)
 ```bash
-$ brew install npm
+$ brew install node@16
+$ brew link node@16 --force
 ```
 
-Ubuntu 16.04 using apt
+Ubuntu 16.04+ using NodeSource repository
 ```bash
-$ sudo apt install npm
+$ curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+$ sudo apt-get install -y nodejs
 ```
 
-Windows:
+##### Option 2: Use Docker (Alternative)
 
-You may try out the guide here (untested): https://www.techomoro.com/how-to-install-and-setup-a-react-app-on-windows-10/
+If you prefer to use Docker and avoid Node.js version management:
+
+```bash
+# Navigate to the dashboard directory
+cd dashboard/
+
+# Create a Dockerfile
+cat > Dockerfile << EOF
+FROM node:16-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+EXPOSE 3000
+CMD ["npm", "start"]
+EOF
+
+# Build the Docker image
+docker build -t esp32-dashboard .
+
+# Run the dashboard in Docker
+docker run -p 3000:3000 esp32-dashboard
+```
 
 **Note!** You may need to install some extra libraries via NPM e.g. *chalk*. You will see an error if so, when you run the dashboard.
 
@@ -89,12 +140,36 @@ ESP32 modules will work as iBeacon monitoring stations, reporting all found blue
 
 The dashboard is a simple React app, connecting to the mosquitto MQTT server and showing each beacon on screen.
 
-To run the dashboard from a terminal go to the dashboard folder and run `npm start`
+##### Option 1: Run with Node.js 16
+
+**Ensure you're using Node.js 16** (see installation instructions above):
+
 ```bash
-$ cd dashboard/
-$ npm start
+# Switch to Node.js 16 if using nvm
+nvm use 16
+
+# Navigate to dashboard folder
+cd dashboard/
+
+# Install dependencies (you may see deprecation warnings - this is normal for this older project)
+npm install
+
+# Start the development server
+npm start
 ```
 
+##### Option 2: Run with Docker
+
+If you created the Docker setup earlier:
+
+```bash
+cd dashboard/
+
+# Run the containerized dashboard
+docker run -p 3000:3000 esp32-dashboard
+```
+
+**Access the dashboard:**
 A browser window will automatically open the dashboard react app, else go to [http://localhost:3000/](http://localhost:3000/)
 
 Stations and beacons will show up on the map when at least three ESP32 stations are connected.
@@ -104,6 +179,25 @@ Stations and beacons will show up on the map when at least three ESP32 stations 
 <img src="screenshot.jpg" alt="Screenshot" width="500">
 
 ## Troubleshooting
+
+### Node.js Compatibility Issues
+
+If you encounter errors like `Error: No such module: http_parser` when running `npm start`, this means you're using an incompatible Node.js version.
+
+**Solution:**
+1. **Check your Node.js version**: `node --version`
+2. **If using Node.js 18+ or 24+**: Switch to Node.js 16 using nvm:
+   ```bash
+   nvm install 16
+   nvm use 16
+   npm start
+   ```
+3. **Alternative**: Use the Docker approach described above
+
+**Common Node.js errors with this project:**
+- `Error: No such module: http_parser` → Use Node.js 16
+- `Error: Cannot find module 'process/browser'` → Use Node.js 16
+- OpenSSL legacy provider errors → Use Node.js 16
 
 ### PubSubClient MQTT_MAX_PACKET_SIZE
 The **PubSubClient** library may have problems sending big packages to the MQTT server e.g. when ESP32 finds many beacons. In the Arduino sketch you can set `#define MQTT_MAX_PACKET_SIZE` to e.g. 2048, but I have experienced that it may not work anyway. Instead I downloaded the PubSubClient library and added it to my PlatformIO project. Here I could change the code of `PubSubClient.h` around line 26 to `#define MQTT_MAX_PACKET_SIZE 2048`.
