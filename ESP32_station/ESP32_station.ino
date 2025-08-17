@@ -64,31 +64,80 @@ public:
     
     bufferIndex++;
     // Print everything via serial port for debugging
-    // Serial.printf("MAC: %s \n", advertisedDevice.getAddress().toString().c_str());
-    // Serial.printf("name: %s \n", advertisedDevice.getName().c_str());
-    // Serial.printf("RSSI: %d \n", advertisedDevice.getRSSI());
+    Serial.printf("MAC: %s \n", advertisedDevice.getAddress().toString().c_str());
+    Serial.printf("name: %s \n", advertisedDevice.getName().c_str());
+    Serial.printf("RSSI: %d \n", advertisedDevice.getRSSI());   
   }
 };
 
 void setup() {
   Serial.begin(115200);
   Serial.println("ESP32 Station Starting...");
+  
+  // Reduce CPU frequency to save power and reduce noise
+  setCpuFrequencyMhz(160); // Default is 240MHz, reduce to 160MHz
+  
   Serial.print("WiFi MAC Address: ");
   Serial.println(WiFi.macAddress());
+  
+  // Add startup delay to allow ESP32 to fully initialize
+  delay(3000); // Increased delay for power stabilization
+  
+  // Set WiFi to station mode and disconnect from any previous connections
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  delay(100);
+  
+  // Set WiFi power to reduce consumption and noise
+  WiFi.setTxPower(WIFI_POWER_20dBm);
+  WiFi.setSleep(false);
+  
   BLEDevice::init(""); // Can only be called once
+  
+  // Reduce BLE power
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P1); // Reduce BLE power
+  
   // Set MQTT buffer size to 2048 bytes
   client.setBufferSize(2048);
+  
+  // Additional delay after BLE init
+  delay(2000);
 }
 
 void connectWiFi() {
+  // Ensure WiFi is in the right mode
+  WiFi.mode(WIFI_STA);
+  delay(100);
+  
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
+  
+  int wifi_attempts = 0;
+  int max_attempts = 30; // 15 seconds timeout
+  
+  while (WiFi.status() != WL_CONNECTED && wifi_attempts < max_attempts) {
     delay(500);
+    wifi_attempts++;
     Serial.println("Connecting to WiFi..");
+    
+    // Feed watchdog to prevent reset during connection
+    yield();
+    
+    // If taking too long, restart WiFi
+    if (wifi_attempts == 20) {
+      WiFi.disconnect();
+      delay(1000);
+      WiFi.begin(ssid, password);
+    }
   }
-  Serial.println("Connected to the WiFi network");
-  Serial.print("My MAC Address: ");
-  Serial.println(WiFi.macAddress());
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("Connected to the WiFi network");
+    Serial.print("My MAC Address: ");
+    Serial.println(WiFi.macAddress());
+  } else {
+    Serial.println("WiFi connection failed, restarting...");
+    ESP.restart();
+  }
 }
 
 void connectMQTT() {
@@ -104,89 +153,170 @@ void connectMQTT() {
   Serial.print("MQTT Client ID: ");
   Serial.println(clientId);
   
-  if (client.connect(clientId.c_str(), mqttUser, mqttPassword)) {
-    Serial.println("connected");
-  } else {
-    Serial.print("failed with state ");
-    Serial.print(client.state());
-    delay(2000);
+  int mqtt_attempts = 0;
+  int max_mqtt_attempts = 5;
+  
+  while (!client.connected() && mqtt_attempts < max_mqtt_attempts) {
+    Serial.print("MQTT attempt ");
+    Serial.println(mqtt_attempts + 1);
+    
+    if (client.connect(clientId.c_str(), mqttUser, mqttPassword)) {
+      Serial.println("MQTT connected successfully");
+      break;
+    } else {
+      Serial.print("MQTT failed with state ");
+      Serial.println(client.state());
+      mqtt_attempts++;
+      delay(2000 * mqtt_attempts); // Exponential backoff
+      
+      // Feed watchdog
+      yield();
+    }
+  }
+  
+  // If MQTT connection failed after multiple attempts, restart ESP32
+  if (!client.connected()) {
+    Serial.println("MQTT connection failed completely, restarting...");
+    ESP.restart();
   }
 }
 
 void ScanBeacons() {
-  delay(1000);
-  BLEScan* pBLEScan = BLEDevice::getScan(); //create new scan
+  Serial.println("Starting BLE scan...");
+  
+  // Add small delay before scan to stabilize power
+  delay(500);
+  
+  BLEScan* pBLEScan = BLEDevice::getScan();
   MyAdvertisedDeviceCallbacks cb;
   pBLEScan->setAdvertisedDeviceCallbacks(&cb);
-  pBLEScan->setActiveScan(true); //active scan uses more power, but get results faster
-  BLEScanResults* foundDevices = pBLEScan->start(beaconScanTime);
-  Serial.print("Devices found: ");
-  //Serial.print(cb.getConcatedMessage());
-  for (uint8_t i = 0; i < bufferIndex; i++) {
-    Serial.print(buffer[i].address);
-    Serial.print(" : ");
-    Serial.println(buffer[i].rssi);
-  }
+  pBLEScan->setActiveScan(true);
   
-  // Stop BLE
+  // Feed watchdog before scan
+  yield();
+  
+  BLEScanResults* foundDevices = pBLEScan->start(beaconScanTime);
+  
+  Serial.print("Devices found: ");
+  Serial.println(bufferIndex);
+  
+  // for (uint8_t i = 0; i < bufferIndex; i++) {
+  //   Serial.print(buffer[i].address);
+  //   Serial.print(" : ");
+  //   Serial.println(buffer[i].rssi);
+  // }
+  
+  // Stop BLE and add delay for power stabilization
   pBLEScan->stop();
   delay(1000);
-  Serial.println("Scan done!");
+  Serial.println("BLE scan completed!");
 }
 
 void loop() {
-  boolean result;
-  // Scan Beacons
-  ScanBeacons();
-  // Reconnect WiFi if not connected
-  while (WiFi.status() != WL_CONNECTED) {
+  boolean result = false;
+  
+  Serial.println("\n--- Loop Start ---");
+  
+  // Add delay at start of loop to prevent overwhelming the system
+  delay(500); // Increased delay
+  
+  // Feed watchdog
+  yield();
+  
+  // Check WiFi first, reconnect if needed
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected, reconnecting...");
     connectWiFi();
   }
   
-  // Reconnect to MQTT if not connected
-  while (!client.connected()) {
+  // Check MQTT connection
+  if (!client.connected()) {
+    Serial.println("MQTT disconnected, reconnecting...");
     connectMQTT();
   }
-  client.loop();
   
-  // SenML begins
-  String payloadString = "{\"e\":[";
-  for(uint8_t i = 0; i < bufferIndex; i++) {
-    payloadString += "{\"m\":\"";
-    payloadString += String(buffer[i].address);
-    payloadString += "\",\"r\":\"";
-    payloadString += String(buffer[i].rssi);
-    payloadString += "\"}";
-    if(i < bufferIndex-1) {
-      payloadString += ',';
+  // Ensure both connections are stable before proceeding
+  if (WiFi.status() == WL_CONNECTED && client.connected()) {
+    Serial.println("Both WiFi and MQTT connected, proceeding with scan...");
+    
+    // Scan Beacons
+    ScanBeacons();
+    
+    // Feed watchdog after BLE scan
+    yield();
+    
+    // Small delay before MQTT operations for power stabilization
+    delay(500);
+    
+    client.loop();
+    yield();
+    
+    // Build and send payload
+    String payloadString = "{\"e\":[";
+    for(uint8_t i = 0; i < bufferIndex; i++) {
+      payloadString += "{\"m\":\"";
+      payloadString += String(buffer[i].address);
+      payloadString += "\",\"r\":\"";
+      payloadString += String(buffer[i].rssi);
+      payloadString += "\"}";
+      if(i < bufferIndex-1) {
+        payloadString += ',';
+      }
     }
+    // SenML ends. Add this stations MAC
+    payloadString += "],\"st\":\"";
+    payloadString += String(WiFi.macAddress());
+    // Add board temperature in fahrenheit
+    payloadString += "\",\"t\":\"";
+    payloadString += String(temprature_sens_read());
+    payloadString += "\"}";
+    
+    Serial.print("Runtime buffer size: ");
+    Serial.println(client.getBufferSize());
+    Serial.print("Payload length: ");
+    Serial.println(payloadString.length());
+    Serial.println("Payload: ");
+    Serial.println(payloadString);
+    
+    payloadString.getBytes(message_char_buffer, payloadString.length()+1);
+    
+    // Try to publish with retry logic and better error handling
+    int publish_attempts = 0;
+    while (!result && publish_attempts < 3) {
+      Serial.print("Publishing attempt ");
+      Serial.println(publish_attempts + 1);
+      
+      // Add small delay before publish for power stabilization
+      delay(100);
+      
+      result = client.publish("/beacons/office", message_char_buffer, payloadString.length(), false);
+      
+      if (!result) {
+        Serial.println("Publish failed, retrying...");
+        delay(1000);
+        client.loop(); // Ensure MQTT client processes any pending messages
+        yield();
+      } else {
+        Serial.println("Publish successful!");
+      }
+      publish_attempts++;
+    }
+    
+    Serial.print("Final PUB Result: ");
+    Serial.println(result ? "SUCCESS" : "FAILED");
+    
+  } else {
+    Serial.println("Connections not stable, skipping this loop iteration");
   }
-  // SenML ends. Add this stations MAC
-  payloadString += "],\"st\":\"";
-  payloadString += String(WiFi.macAddress());
-  // Add board temperature in fahrenheit
-  payloadString += "\",\"t\":\"";
-  payloadString += String(temprature_sens_read());
-  payloadString += "\"}";
-  
-  // Print and publish payload
-  // Serial.print("Compile-time MAX len: ");
-  // Serial.println(MQTT_MAX_PACKET_SIZE);  // This will always show 256 (the #define)
-  
-  Serial.print("Runtime buffer size: ");
-  Serial.println(client.getBufferSize());  // This will show 2048 after setBufferSize()
-  
-  Serial.print("Payload length: ");
-  Serial.println(payloadString.length());
-  Serial.println(payloadString);
-  
-  payloadString.getBytes(message_char_buffer, payloadString.length()+1);
-  result = client.publish("/beacons/office", message_char_buffer, payloadString.length(), false);
-  Serial.print("PUB Result: ");
-  Serial.println(result);
   
   //Start over the scan loop
   bufferIndex = 0;
-  // Add delay to slow down publishing frequency if needed.
-  //delay(5000);
+  
+  // Longer delay to reduce power consumption and allow system recovery
+  delay(2000);
+  
+  // Feed watchdog one more time
+  yield();
+  
+  Serial.println("--- Loop End ---\n");
 }
