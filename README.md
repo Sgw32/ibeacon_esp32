@@ -101,9 +101,10 @@ If you are not familiar with PlatformIO and Visual Studio Code (vscode), then I 
 
 **Arduino BLE and MQTT libraries**
 
-You need the following two libraries, both can be installed from the Arduino IDE Library Manager or PlatformIO:
+You need the following library, which can be installed from the Arduino IDE Library Manager or PlatformIO:
 * [PubSubClient](https://pubsubclient.knolleary.net)
-* [ESP32 BLE Arduino](https://github.com/nkolban/ESP32_BLE_Arduino)
+
+**Note about ESP32 BLE Arduino:** The [ESP32 BLE Arduino](https://github.com/nkolban/ESP32_BLE_Arduino) repository is now deprecated. The BLE code is now part of the ESP32 Arduino core, making it automatically available to any Arduino ESP32 project without the need for manual import. For more information, see [ESP32 Arduino BLE Library](https://github.com/espressif/arduino-esp32/tree/master/libraries/BLE).
 
 **Note!** See **Troubleshooting** section below in regards to `PubSubClient` and packet size (MQTT_MAX_PACKET_SIZE). There may be problems in sending too much data if a station finds too many beacons. Check the serial console for an ESP32 and make sure that it prints out `PUB Result: 1`. If it prints `PUB Result: 0` there may be a problem transmitting the json data to the MQTT server. This can be fixed by changing `MQTT_MAX_PACKET_SIZE` in the `PubSubClient` library.
 
