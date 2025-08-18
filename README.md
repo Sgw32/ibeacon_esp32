@@ -135,6 +135,9 @@ Edit the file `credentials.h` and change wifi ssid and password, and also change
 
 Place the ESP32 modules around the area where you want to do positioning, preferably 10-15 meters appart and also in wifi range.
 
+**Power Supply Considerations:**
+The ESP32 code includes power consumption optimizations (reduced CPU frequency, WiFi power, and BLE power) to ensure stable operation when powered from external USB adapters. Tests have shown that ESP32 modules communicate reliably over MQTT when powered from computers or power banks, but may fail to send MQTT messages when powered from some external USB power adapters due to insufficient power delivery. The power optimizations in the code help ensure stable operation regardless of the power source.
+
 ESP32 modules will work as iBeacon monitoring stations, reporting all found bluetooth beacons to the MQTT topic, with their MAC address and RSSI.
 
 #### Web dashboard

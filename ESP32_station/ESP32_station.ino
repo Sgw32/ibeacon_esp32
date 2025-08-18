@@ -75,6 +75,9 @@ void setup() {
   Serial.println("ESP32 Station Starting...");
   
   // Reduce CPU frequency to save power and reduce noise
+  // This helps ensure stable operation when powered from external USB adapters
+  // Tests show ESP32 works fine with computer/powerbank power, but may fail 
+  // to send MQTT messages with some external USB adapters due to power issues
   setCpuFrequencyMhz(160); // Default is 240MHz, reduce to 160MHz
   
   Serial.print("WiFi MAC Address: ");
@@ -89,12 +92,14 @@ void setup() {
   delay(100);
   
   // Set WiFi power to reduce consumption and noise
+  // Lower power consumption helps with stability on external USB power adapters
   WiFi.setTxPower(WIFI_POWER_20dBm);
   WiFi.setSleep(false);
   
   BLEDevice::init(""); // Can only be called once
   
   // Reduce BLE power
+  // Lower BLE power consumption improves stability with external USB power adapters
   esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P1); // Reduce BLE power
   
   // Set MQTT buffer size to 2048 bytes
