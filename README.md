@@ -204,9 +204,17 @@ If you encounter errors like `Error: No such module: http_parser` when running `
 - OpenSSL legacy provider errors → Use Node.js 16
 
 ### PubSubClient MQTT_MAX_PACKET_SIZE
-The **PubSubClient** library may have problems sending big packages to the MQTT server e.g. when ESP32 finds many beacons. In the Arduino sketch you can set `#define MQTT_MAX_PACKET_SIZE` to e.g. 2048, but I have experienced that it may not work anyway. Instead I downloaded the PubSubClient library and added it to my PlatformIO project. Here I could change the code of `PubSubClient.h` around line 26 to `#define MQTT_MAX_PACKET_SIZE 2048`.
+The **PubSubClient** library may have problems sending big packages to the MQTT server e.g. when ESP32 finds many beacons. Initially, setting `#define MQTT_MAX_PACKET_SIZE` to 2048 in the Arduino sketch was attempted, but this did not work reliably. Manually editing the original library files was also tried but proved problematic.
 
-I may add the PlatformIO project here later for easier setup.
+**Current Solution:**
+The issue is now resolved by using the PubSubClient library's built-in method to set the buffer size dynamically:
+
+```cpp
+// Set MQTT buffer size to 2048 bytes
+client.setBufferSize(2048);
+```
+
+This approach works reliably and doesn't require modifying library files. The `setBufferSize()` method should be called before connecting to the MQTT server, as implemented in the current ESP32 station code.
 
 ## TODO
 * improve accuracy (average value, faster beacons, sync stations)
