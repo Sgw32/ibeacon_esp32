@@ -6,3 +6,19 @@
     background-repeat: no-repeat;
     background-size: contain;
 }
+
+.beacon-trajectory {
+    pointer-events: none;
+}
+
+.beacon-trajectory polyline {
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.75;
+}
+
+.beacon-trajectory circle {
+    opacity: 0.8;
+}

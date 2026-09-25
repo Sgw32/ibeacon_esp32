@@ -1,15 +1,103 @@
-ul.known-beacons-list,
-ul.all-beacons-list {
-    list-style: none;
-    padding-left: 0;
+.debug-panel {
+    padding: 0.75rem;
+    text-align: left;
+    overflow-wrap: anywhere;
+    max-height: 100vh;
+    overflow-y: auto;
 }
 
-ul.known-beacons-list li,
+.debug-panel h3 { margin: 0 0 0.75rem; }
+.mqtt-status { font-weight: bold; text-transform: capitalize; }
+
+.status-dot {
+    display: inline-block;
+    width: 0.65rem;
+    height: 0.65rem;
+    margin-right: 0.4rem;
+    border-radius: 50%;
+    background: #f2c037;
+}
+
+.mqtt-status.connected .status-dot { background: #21ba45; }
+.mqtt-status.error .status-dot,
+.mqtt-status.offline .status-dot,
+.mqtt-status.disconnected .status-dot { background: #db2828; }
+
+.mqtt-detail,
+.debug-hint,
+.debug-empty {
+    margin-top: 0.4rem;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.82rem;
+}
+
+.debug-summary,
+.debug-details dl {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+    gap: 0.3rem 0.6rem;
+    margin: 0.75rem 0;
+    font-size: 0.82rem;
+}
+
+.debug-summary dt,
+.debug-details dt { color: rgba(255, 255, 255, 0.65); }
+.debug-summary dd,
+.debug-details dd { margin: 0; }
+
+.raw-message {
+    margin: 0.5rem 0;
+    font-size: 0.78rem;
+}
+
+.raw-message summary { cursor: pointer; }
+.raw-message pre {
+    max-height: 10rem;
+    overflow: auto;
+    padding: 0.4rem;
+    white-space: pre-wrap;
+    background: rgba(0, 0, 0, 0.25);
+}
+
+ul.all-beacons-list {
+    list-style: none;
+    padding: 0;
+    margin-top: 0.75rem;
+}
+
 ul.all-beacons-list li {
-    margin: 0.5em;
+    margin-bottom: 0.45rem;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 0.25rem;
+}
+
+.debug-mac {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0.55rem;
+    border: 0;
+    color: white;
+    background: rgba(255, 255, 255, 0.06);
     cursor: pointer;
+    font: inherit;
+    text-align: left;
 }
-ul.known-beacons-list li:hover,
-ul.all-beacons-list li:hover {
-    background-color: darkslategrey;
+
+.debug-mac:hover,
+.debug-mac:focus-visible { background: darkslategrey; }
+.debug-details { padding: 0 0.55rem 0.55rem; }
+.debug-subheading { margin: 0.6rem 0 0.35rem; font-weight: bold; }
+
+.station-reading {
+    display: grid;
+    gap: 0.15rem;
+    margin-bottom: 0.45rem;
+    padding: 0.45rem;
+    border-left: 3px solid #767676;
+    background: rgba(0, 0, 0, 0.18);
+    font-size: 0.78rem;
 }
+
+.station-reading.selected { border-left-color: #21ba45; }
+.station-reading .label { justify-self: start; margin: 0.15rem 0; }

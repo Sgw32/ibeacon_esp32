@@ -14,13 +14,13 @@
 #include "credentials.h"
 
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-  uint8_t temprature_sens_read();
-#ifdef __cplusplus
-}
-#endif
+// #ifdef __cplusplus
+// extern "C" {
+// #endif
+//   uint8_t temprature_sens_read();
+// #ifdef __cplusplus
+// }
+// #endif
 
 //Scan time must be longer than beacon interval
 int beaconScanTime = 4;
@@ -100,7 +100,7 @@ void setup() {
   
   // Reduce BLE power
   // Lower BLE power consumption improves stability with external USB power adapters
-  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P1); // Reduce BLE power
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P3); // Reduce BLE power
   
   // Set MQTT buffer size to 2048 bytes
   client.setBufferSize(2048);
@@ -273,7 +273,7 @@ void loop() {
     payloadString += String(WiFi.macAddress());
     // Add board temperature in fahrenheit
     payloadString += "\",\"t\":\"";
-    payloadString += String(temprature_sens_read());
+    payloadString += String(temperatureRead());
     payloadString += "\"}";
     
     Serial.print("Runtime buffer size: ");

@@ -1,10 +1,11 @@
-import MQTT from "mqtt";
+import mqtt from "mqtt";
 import conf from './config';
 
 class MessageContainer {
 
-    constructor(callbackFunc) {
+    constructor(callbackFunc, statusCallback = () => {}) {
         this.callbackFunc = callbackFunc;
+        this.statusCallback = statusCallback;
         this.errors = [];
         this.beacons = {};
         this.stations = [];
@@ -22,7 +23,7 @@ class MessageContainer {
                 console.log(error.message);
             }
 
-            if(msg !== null) {
+            if(msg !== null && Array.isArray(msg.e) && typeof msg.st === 'string') {
                 for(let i=0; i<msg.e.length;i++) {
                     let mac = msg.e[i].m.toLowerCase();
                     let station = msg.st.toLowerCase();
@@ -45,31 +46,51 @@ class MessageContainer {
                         // Insert new record
                         this.beacons[mac][station] = {
                             rssi: parseInt(msg.e[i].r, 10),
-                            timestamp: Math.floor(Date.now() / 1000)
+                            timestamp: Date.now()
                         }
                     }
-                    this.callbackFunc(this.beacons);
                 }
+                this.callbackFunc({...this.beacons}, {
+                    topic,
+                    receivedAt: Date.now(),
+                    eventCount: msg.e.length,
+                    stationMac: msg.st.toLowerCase(),
+                    payload
+                });
+            } else if (msg !== null) {
+                this.statusCallback('error', 'Message does not contain st and e fields');
             }
         };
 
         /* OPEN WEBSOCKET CONNECTION TO MQTT BROKER */
-        let client = MQTT.connect({
-            port: conf.port,
-            host: conf.host,
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        this.statusCallback('connecting', `${protocol}://${conf.host}:${conf.port}`);
+        this.client = mqtt.connect(`${protocol}://${conf.host}:${conf.port}`, {
             username: conf.username,
             password: conf.password,
             clientId: 'bledemo_' + Math.random().toString(16).substr(2, 8),
             clean: true
         });
-        client.on('connect', function () {
-            client.subscribe(conf.channel);
-            client.publish(conf.channel, 'Dashboard is now listening.');
+        this.client.on('connect', () => {
+            this.statusCallback('connected', `${protocol}://${conf.host}:${conf.port}`);
+            this.client.subscribe(conf.channel, error => {
+                if (error) {
+                    this.statusCallback('error', `Subscription failed: ${error.message}`);
+                }
+            });
         });
-        client.on('message', this.processMessage.bind(this));
-        client.on('error', function () {
-            this.errors.push("Error occurred");
+        this.client.on('message', this.processMessage.bind(this));
+        this.client.on('reconnect', () => this.statusCallback('reconnecting'));
+        this.client.on('offline', () => this.statusCallback('offline'));
+        this.client.on('close', () => this.statusCallback('disconnected'));
+        this.client.on('error', (error) => {
+            this.errors.push(error.message);
+            this.statusCallback('error', error.message);
         });
+    }
+
+    close() {
+        this.client?.end();
     }
 
 }

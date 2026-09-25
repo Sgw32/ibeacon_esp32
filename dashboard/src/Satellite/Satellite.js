@@ -11,18 +11,35 @@ class Satellite extends Component {
     };
 
     handleMouseDown = (e) => {
+        e.preventDefault();
         this.coords = {
             x: e.pageX,
             y: e.pageY
         };
         document.addEventListener('mousemove', this.handleMouseMove);
+        document.addEventListener('mouseup', this.handleMouseUp);
     };
 
     handleMouseUp = () => {
         document.removeEventListener('mousemove', this.handleMouseMove);
+        document.removeEventListener('mouseup', this.handleMouseUp);
+        if (!this.coords) {
+            return;
+        }
         this.coords = {};
-        this.props.setPosiotionCallback({x: this.state.x, y: this.state.y, mac: this.props.mac});
+        this.props.onPositionChange({x: this.state.x, y: this.state.y, mac: this.props.mac});
     };
+
+    componentDidUpdate(previousProps) {
+        if (previousProps.x !== this.props.x || previousProps.y !== this.props.y) {
+            this.setState({x: this.props.x, y: this.props.y});
+        }
+    }
+
+    componentWillUnmount() {
+        document.removeEventListener('mousemove', this.handleMouseMove);
+        document.removeEventListener('mouseup', this.handleMouseUp);
+    }
 
     handleMouseMove = (e) => {
         const xDiff = this.coords.x - e.pageX;
@@ -45,8 +62,7 @@ class Satellite extends Component {
                 height="30px"
                 x={x}
                 y={y}
-                onMouseDown={this.handleMouseDown}
-                onMouseUp={this.handleMouseUp}>
+                onMouseDown={this.handleMouseDown}>
                 <Bullseye />
                 <text x="0" y="30px">{mac.toUpperCase()}</text>
             </svg>
