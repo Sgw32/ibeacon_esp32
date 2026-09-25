@@ -2,7 +2,7 @@
 #define CREDENTIALS_H_
 /* WiFi username and password */
 const char* ssid = "PHOL-LABS";
-const char* password = "fed1saerw6";
+const char* password = "12345678";
 
 /* MQTT credentials and connection */
 const char* mqttServer = "192.168.1.121";
