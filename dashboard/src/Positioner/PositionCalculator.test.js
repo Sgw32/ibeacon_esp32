@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateDistance, locateWithDebug, trilaterate } from './PositionCalculator.js';
+import { calculateDistance, locateWithDebug, lowPass, trilaterate } from './PositionCalculator.js';
 
 describe('trilaterate', () => {
     it('finds a point from three station distances', () => {
@@ -36,5 +36,10 @@ describe('position debugging', () => {
 
     it('converts RSSI to a distance using the configured radio model', () => {
         expect(calculateDistance(-69)).toBeCloseTo(1);
+    });
+
+    it('applies the configured low-pass coefficient', () => {
+        expect(lowPass(-80, -60, 0.25)).toBeCloseTo(-75);
+        expect(lowPass(10, 20, 1)).toBe(20);
     });
 });

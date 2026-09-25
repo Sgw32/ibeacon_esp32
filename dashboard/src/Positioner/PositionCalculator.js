@@ -18,6 +18,9 @@ export const trilaterate = (points) => {
 export const DEFAULT_TX_POWER = -69;
 export const DEFAULT_PATH_LOSS_EXPONENT = 3;
 
+export const lowPass = (previousValue, currentValue, alpha) =>
+    alpha * currentValue + (1 - alpha) * previousValue;
+
 export const calculateDistance = (rssi, txPower = DEFAULT_TX_POWER, pathLossExponent = DEFAULT_PATH_LOSS_EXPONENT) =>
     Math.pow(10, ((txPower - rssi) / (10 * pathLossExponent)));
 

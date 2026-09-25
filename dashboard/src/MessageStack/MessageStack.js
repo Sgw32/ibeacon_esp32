@@ -55,6 +55,7 @@ class MessageContainer {
                     receivedAt: Date.now(),
                     eventCount: msg.e.length,
                     stationMac: msg.st.toLowerCase(),
+                    beaconMacs: msg.e.map(event => event.m.toLowerCase()),
                     payload
                 });
             } else if (msg !== null) {

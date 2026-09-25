@@ -5,7 +5,7 @@ import MessageStack from './MessageStack/MessageStack.js';
 import KnownBeaconsList from './Settings/Settings.js';
 import { Sidebar, Container,  Menu, Icon } from 'semantic-ui-react';
 import Floorplan from './Floorplan/Floorplan.js';
-import { locateWithDebug } from './Positioner/PositionCalculator.js';
+import { locateWithDebug, lowPass } from './Positioner/PositionCalculator.js';
 
 const loadStations = () => {
     try {
@@ -22,11 +22,14 @@ class App extends Component {
         super(props);
         this.state = {
             beacons: {},
+            filteredBeacons: {},
             sortedBeacons: [],
             knownBeacons: [],
             stations: loadStations(),
             positions: {},
             trajectories: {},
+            rssiLpfAlpha: 1,
+            positionLpfAlpha: 1,
             mqttStatus: 'initializing',
             mqttDetail: '',
             connectedAt: null,
@@ -47,15 +50,19 @@ class App extends Component {
     receiver = (beaconList, metadata) => {
         this.setState(state => {
             const stations = this.updateStationMacList(beaconList, state.stations);
+            const filteredBeacons = this.filterRssiReadings(beaconList, state.filteredBeacons, metadata, state.rssiLpfAlpha);
             const calculated = this.calculatePositions(
-                beaconList,
+                filteredBeacons,
                 stations,
                 state.trajectories,
+                state.positions,
                 metadata.receivedAt,
-                'MQTT message'
+                'MQTT message',
+                state.positionLpfAlpha
             );
             return {
                 beacons: beaconList,
+                filteredBeacons,
                 sortedBeacons: this.beaconMacList(beaconList),
                 stations,
                 positions: calculated.positions,
@@ -68,6 +75,27 @@ class App extends Component {
                 eventCount: state.eventCount + metadata.eventCount
             };
         });
+    };
+
+    filterRssiReadings = (rawBeacons, previousFiltered, metadata, alpha) => {
+        const filtered = Object.fromEntries(
+            Object.entries(previousFiltered).map(([mac, readings]) => [mac, {...readings}])
+        );
+
+        metadata.beaconMacs.forEach(mac => {
+            const rawReading = rawBeacons[mac]?.[metadata.stationMac];
+            if (!rawReading) return;
+            const previous = previousFiltered[mac]?.[metadata.stationMac];
+            const rssi = previous
+                ? lowPass(previous.rssi, rawReading.rssi, alpha)
+                : rawReading.rssi;
+            filtered[mac] = {
+                ...(filtered[mac] || {}),
+                [metadata.stationMac]: {...rawReading, rawRssi: rawReading.rssi, rssi}
+            };
+        });
+
+        return filtered;
     };
 
     handleMqttStatus = (mqttStatus, mqttDetail = '') => {
@@ -133,29 +161,37 @@ class App extends Component {
             const stations = {...state.stations, [mac]: {x, y}};
             localStorage.setItem('stations', JSON.stringify(stations));
             const calculated = this.calculatePositions(
-                state.beacons,
+                state.filteredBeacons,
                 stations,
                 state.trajectories,
+                state.positions,
                 Date.now(),
-                `Station ${mac} moved`
+                `Station ${mac} moved`,
+                state.positionLpfAlpha
             );
             return {stations, positions: calculated.positions, trajectories: calculated.trajectories};
         });
     };
 
-    calculatePositions = (beacons, stations, existingTrajectories, updatedAt, source) => {
+    calculatePositions = (beacons, stations, existingTrajectories, previousPositions, updatedAt, source, positionAlpha) => {
         const positions = {};
         const trajectories = {...existingTrajectories};
         const pixelsPerMeter = this.state ? this.state.width / this.state.widthMeters : window.innerWidth / 8.5;
 
         Object.keys(beacons).forEach(mac => {
             const result = locateWithDebug(beacons[mac], stations, pixelsPerMeter);
-            positions[mac] = {...result, updatedAt, source};
-            if (result.position) {
+            const rawPosition = result.position;
+            const previousPosition = previousPositions[mac]?.position;
+            const position = rawPosition && previousPosition ? {
+                x: lowPass(previousPosition.x, rawPosition.x, positionAlpha),
+                y: lowPass(previousPosition.y, rawPosition.y, positionAlpha)
+            } : rawPosition;
+            positions[mac] = {...result, rawPosition, position, updatedAt, source};
+            if (position) {
                 const points = trajectories[mac] ? [...trajectories[mac]] : [];
                 const last = points[points.length - 1];
-                if (!last || last.x !== result.position.x || last.y !== result.position.y) {
-                    points.push({...result.position, timestamp: updatedAt});
+                if (!last || Math.abs(last.x - position.x) >= 0.1 || Math.abs(last.y - position.y) >= 0.1) {
+                    points.push({...position, timestamp: updatedAt});
                 }
                 trajectories[mac] = points;
             }
@@ -165,6 +201,29 @@ class App extends Component {
     };
 
     clearTrajectories = () => this.setState({trajectories: {}});
+
+    resetFilters = () => this.setState(state => {
+        const filteredBeacons = Object.fromEntries(Object.entries(state.beacons).map(([mac, readings]) => [
+            mac,
+            Object.fromEntries(Object.entries(readings).map(([stationMac, reading]) => [
+                stationMac,
+                {...reading, rawRssi: reading.rssi}
+            ]))
+        ]));
+        const calculated = this.calculatePositions(
+            filteredBeacons,
+            state.stations,
+            {},
+            {},
+            Date.now(),
+            'LPF reset',
+            state.positionLpfAlpha
+        );
+        return {filteredBeacons, positions: calculated.positions};
+    });
+
+    setRssiLpfAlpha = (alpha) => this.setState({rssiLpfAlpha: alpha}, this.resetFilters);
+    setPositionLpfAlpha = (alpha) => this.setState({positionLpfAlpha: alpha}, this.resetFilters);
 
     componentDidMount() {
         this.messageStack = new MessageStack(this.receiver, this.handleMqttStatus);
@@ -188,6 +247,7 @@ class App extends Component {
                             <KnownBeaconsList
                                 beacons={this.state.sortedBeacons}
                                 observations={this.state.beacons}
+                                filteredObservations={this.state.filteredBeacons}
                                 positions={this.state.positions}
                                 trajectories={this.state.trajectories}
                                 stations={this.state.stations}
@@ -200,8 +260,13 @@ class App extends Component {
                                 lastStationMac={this.state.lastStationMac}
                                 messageCount={this.state.messageCount}
                                 eventCount={this.state.eventCount}
+                                rssiLpfAlpha={this.state.rssiLpfAlpha}
+                                positionLpfAlpha={this.state.positionLpfAlpha}
                                 clock={this.state.clock}
                                 onClearTrajectories={this.clearTrajectories}
+                                onResetFilters={this.resetFilters}
+                                onRssiLpfAlphaChange={this.setRssiLpfAlpha}
+                                onPositionLpfAlphaChange={this.setPositionLpfAlpha}
                             />
                         </Menu.Item>
                     </Sidebar>

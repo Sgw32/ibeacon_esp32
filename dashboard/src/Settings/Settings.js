@@ -20,6 +20,7 @@ class SettingsSidemenu extends Component {
 
     renderBeaconDetails(mac) {
         const observations = this.props.observations[mac] || {};
+        const filteredObservations = this.props.filteredObservations[mac] || {};
         const calculation = this.props.positions[mac];
         const trajectory = this.props.trajectories[mac] || [];
         const measurements = calculation?.measurements || [];
@@ -29,7 +30,8 @@ class SettingsSidemenu extends Component {
             <div className="debug-details">
                 <dl>
                     <dt>Calculation</dt><dd>{calculation?.status || 'Waiting for data'}</dd>
-                    <dt>Position</dt><dd>{calculation?.position ? `${calculation.position.x}, ${calculation.position.y} px` : 'not available'}</dd>
+                    <dt>Position</dt><dd>{calculation?.position ? `${calculation.position.x.toFixed(1)}, ${calculation.position.y.toFixed(1)} px` : 'not available'}</dd>
+                    <dt>Raw position</dt><dd>{calculation?.rawPosition ? `${calculation.rawPosition.x}, ${calculation.rawPosition.y} px` : 'not available'}</dd>
                     <dt>Position updated</dt><dd>{calculation ? `${formatTime(calculation.updatedAt)} (${formatAge(calculation.updatedAt, this.props.clock)})` : 'never'}</dd>
                     <dt>Update trigger</dt><dd>{calculation?.source || '—'}</dd>
                     <dt>Trajectory points</dt><dd>{trajectory.length}</dd>
@@ -41,12 +43,14 @@ class SettingsSidemenu extends Component {
                 {Object.keys(observations).length === 0 && <div className="debug-empty">No observations</div>}
                 {Object.keys(observations).map(stationMac => {
                     const observation = observations[stationMac];
+                    const filteredObservation = filteredObservations[stationMac];
                     const measurement = measurementByStation[stationMac];
                     const station = this.props.stations[stationMac];
                     return (
                         <div className={`station-reading ${measurement ? 'selected' : ''}`} key={stationMac}>
                             <strong>{stationMac}</strong>{measurement && <Label size="mini" color="green">used</Label>}
-                            <span>RSSI {observation.rssi} dBm</span>
+                            <span>RSSI raw {observation.rssi} dBm</span>
+                            <span>RSSI filtered {filteredObservation ? filteredObservation.rssi.toFixed(2) : '—'} dBm</span>
                             <span>Seen {formatTime(observation.timestamp)} ({formatAge(observation.timestamp, this.props.clock)})</span>
                             <span>Station {station ? `${Math.round(station.x)}, ${Math.round(station.y)} px` : 'position unknown'}</span>
                             {measurement && <span>Estimated distance {measurement.distanceMeters.toFixed(2)} m / {measurement.distancePixels.toFixed(1)} px</span>}
@@ -66,6 +70,21 @@ class SettingsSidemenu extends Component {
                     <span className="status-dot" /> MQTT {this.props.mqttStatus}
                 </div>
                 {this.props.mqttDetail && <div className="mqtt-detail">{this.props.mqttDetail}</div>}
+                <section className="filter-controls">
+                    <h4>Low-pass filters</h4>
+                    <label>
+                        <span>RSSI α <output>{this.props.rssiLpfAlpha.toFixed(2)}</output></span>
+                        <input type="range" min="0.01" max="1" step="0.01" value={this.props.rssiLpfAlpha} onChange={event => this.props.onRssiLpfAlphaChange(Number(event.target.value))} />
+                    </label>
+                    <label>
+                        <span>Position α <output>{this.props.positionLpfAlpha.toFixed(2)}</output></span>
+                        <input type="range" min="0.01" max="1" step="0.01" value={this.props.positionLpfAlpha} onChange={event => this.props.onPositionLpfAlphaChange(Number(event.target.value))} />
+                    </label>
+                    <div className="filter-help">filtered = α × new + (1 − α) × previous. 1.00 = off; lower α = stronger smoothing.</div>
+                    <Button compact size="tiny" onClick={this.props.onResetFilters}>
+                        <Icon name="refresh" /> Reset filter history
+                    </Button>
+                </section>
                 <dl className="debug-summary">
                     <dt>Connected at</dt><dd>{formatTime(this.props.connectedAt)}</dd>
                     <dt>Last message</dt><dd>{formatTime(this.props.lastMessageAt)} ({formatAge(this.props.lastMessageAt, this.props.clock)})</dd>

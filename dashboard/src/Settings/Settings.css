@@ -23,6 +23,21 @@
 .mqtt-status.offline .status-dot,
 .mqtt-status.disconnected .status-dot { background: #db2828; }
 
+.filter-controls {
+    margin: 0.75rem 0;
+    padding: 0.65rem;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 0.25rem;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.filter-controls h4 { margin: 0 0 0.55rem; }
+.filter-controls label { display: block; margin-bottom: 0.55rem; }
+.filter-controls label span { display: flex; justify-content: space-between; }
+.filter-controls input[type="range"] { width: 100%; accent-color: #21ba45; }
+.filter-controls output { font-variant-numeric: tabular-nums; font-weight: bold; }
+.filter-help { margin-bottom: 0.55rem; color: rgba(255, 255, 255, 0.7); font-size: 0.78rem; }
+
 .mqtt-detail,
 .debug-hint,
 .debug-empty {
