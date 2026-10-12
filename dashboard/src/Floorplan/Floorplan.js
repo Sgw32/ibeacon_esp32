@@ -32,7 +32,7 @@ class Floorimage extends React.Component {
         const positionedMacs = Object.keys(this.props.positions).filter(key => this.props.positions[key].position);
         if(positionedMacs.length > 0) {
             beaconIcons = positionedMacs.map(key =>
-                <Pin key={key} mac={key} x={this.props.positions[key].position.x} y={this.props.positions[key].position.y} />
+                <Pin key={key} mac={key} device={this.props.devices?.[key]} x={this.props.positions[key].position.x} y={this.props.positions[key].position.y} />
             );
         }
 
@@ -40,7 +40,7 @@ class Floorimage extends React.Component {
             const points = this.props.trajectories[mac];
             const color = trajectoryColor(mac);
             return (
-                <g className="beacon-trajectory" key={mac}>
+                <g className={`beacon-trajectory ${this.props.devices?.[mac]?.kind === 'healthband' ? 'healthband' : ''}`} key={mac}>
                     {points.length > 1 && <polyline points={points.map(point => `${point.x},${point.y}`).join(' ')} stroke={color} />}
                     {points.map((point, index) => <circle key={`${point.timestamp}-${index}`} cx={point.x} cy={point.y} r="3" fill={color} />)}
                 </g>

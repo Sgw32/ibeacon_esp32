@@ -24,13 +24,11 @@ Other Platforms
 
 #### Node.js and NPM for running the web dashboard
 
-**⚠️ Important: Node.js Version Compatibility**
+The Vite dashboard requires **Node.js 22.12 or newer**.
 
-This project was built with older dependencies and requires **Node.js 16** to run properly. Modern Node.js versions (18+) will cause compatibility issues.
+##### Option 1: Use Node.js 22 (Recommended)
 
-##### Option 1: Use Node.js 16 (Recommended)
-
-Install Node Version Manager (nvm) and use Node.js 16:
+Install Node Version Manager (nvm) and use Node.js 22:
 
 **MacOS/Linux:**
 ```bash
@@ -40,25 +38,25 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
 # Restart terminal or source profile
 source ~/.zshrc  # or ~/.bash_profile
 
-# Install and use Node.js 16
-nvm install 16
-nvm use 16
+# Install and use Node.js 22
+nvm install 22
+nvm use 22
 
-# Verify version
-node --version  # Should show v16.x.x
+# Verify version (22.12.0 or newer)
+node --version
 ```
 
 **Alternative installation via package managers:**
 
 MacOS using [homebrew](https://brew.sh)
 ```bash
-$ brew install node@16
-$ brew link node@16 --force
+$ brew install node@22
+$ brew link node@22 --force
 ```
 
-Ubuntu 16.04+ using NodeSource repository
+Ubuntu using NodeSource repository
 ```bash
-$ curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+$ curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 $ sudo apt-get install -y nodejs
 ```
 
@@ -72,10 +70,10 @@ cd dashboard/
 
 # Create a Dockerfile
 cat > Dockerfile << EOF
-FROM node:16-alpine
+FROM node:22-alpine
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 COPY . .
 EXPOSE 3000
 CMD ["npm", "start"]
@@ -86,12 +84,6 @@ docker build -t esp32-dashboard .
 
 # Run the dashboard in Docker
 docker run -p 3000:3000 esp32-dashboard
-```
-
-**Note!** You may need to install some extra libraries via NPM e.g. *chalk*. You will see an error if so, when you run the dashboard.
-
-```bash
-$ npm install chalk
 ```
 
 #### ESP32 IDE and libraries
@@ -140,23 +132,32 @@ The ESP32 code includes power consumption optimizations (reduced CPU frequency, 
 
 ESP32 modules will work as iBeacon monitoring stations, reporting all found bluetooth beacons to the MQTT topic, with their MAC address and RSSI.
 
+The stations also recognize a HealthBand advertisement by the
+`HealthBand` name prefix and report its name, target type, and configured
+one-metre RSSI calibration. The dashboard positions the wearable as a moving target;
+the ESP32 station MACs remain fixed anchors and are excluded from the target
+list. If the wearable uses a custom BLE name, update
+`healthBandNamePrefix` near the top of `ESP32_station.ino`.
+Set `healthBandRssiAtOneMeter` there after measuring RSSI at one metre in the
+wearable's normal orientation for better distance estimates.
+
 #### Web dashboard
 
 The dashboard is a simple React app, connecting to the mosquitto MQTT server and showing each beacon on screen.
 
-##### Option 1: Run with Node.js 16
+##### Option 1: Run with Node.js 22
 
-**Ensure you're using Node.js 16** (see installation instructions above):
+**Ensure you're using Node.js 22.12 or newer** (see installation instructions above):
 
 ```bash
-# Switch to Node.js 16 if using nvm
-nvm use 16
+# Switch to Node.js 22 if using nvm
+nvm use 22
 
 # Navigate to dashboard folder
 cd dashboard/
 
-# Install dependencies (you may see deprecation warnings - this is normal for this older project)
-npm install
+# Install exactly the locked dependencies
+npm ci
 
 # Start the development server
 npm start
@@ -186,22 +187,17 @@ Stations and beacons will show up on the map when at least three ESP32 stations 
 
 ### Node.js Compatibility Issues
 
-If you encounter errors like `Error: No such module: http_parser` when running `npm start`, this means you're using an incompatible Node.js version.
+If Vite refuses to start, first check the Node.js version.
 
 **Solution:**
 1. **Check your Node.js version**: `node --version`
-2. **If using Node.js 18+ or 24+**: Switch to Node.js 16 using nvm:
+2. **If older than 22.12**: Switch to Node.js 22 using nvm:
    ```bash
-   nvm install 16
-   nvm use 16
+   nvm install 22
+   nvm use 22
    npm start
    ```
 3. **Alternative**: Use the Docker approach described above
-
-**Common Node.js errors with this project:**
-- `Error: No such module: http_parser` → Use Node.js 16
-- `Error: Cannot find module 'process/browser'` → Use Node.js 16
-- OpenSSL legacy provider errors → Use Node.js 16
 
 ### PubSubClient MQTT_MAX_PACKET_SIZE
 The **PubSubClient** library may have problems sending big packages to the MQTT server e.g. when ESP32 finds many beacons. Initially, setting `#define MQTT_MAX_PACKET_SIZE` to 2048 in the Arduino sketch was attempted, but this did not work reliably. Manually editing the original library files was also tried but proved problematic.
@@ -210,8 +206,7 @@ The **PubSubClient** library may have problems sending big packages to the MQTT 
 The issue is now resolved by using the PubSubClient library's built-in method to set the buffer size dynamically:
 
 ```cpp
-// Set MQTT buffer size to 2048 bytes
-client.setBufferSize(2048);
+client.setBufferSize(mqttBufferSize); // currently 8192 bytes
 ```
 
 This approach works reliably and doesn't require modifying library files. The `setBufferSize()` method should be called before connecting to the MQTT server, as implemented in the current ESP32 station code.

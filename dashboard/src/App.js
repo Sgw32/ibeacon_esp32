@@ -22,6 +22,7 @@ class App extends Component {
         super(props);
         this.state = {
             beacons: {},
+            devices: {},
             filteredBeacons: {},
             sortedBeacons: [],
             knownBeacons: [],
@@ -49,7 +50,8 @@ class App extends Component {
 
     receiver = (beaconList, metadata) => {
         this.setState(state => {
-            const stations = this.updateStationMacList(beaconList, state.stations);
+            const devices = metadata.devices || state.devices;
+            const stations = this.updateStationMacList(metadata.stationMac, state.stations);
             const filteredBeacons = this.filterRssiReadings(beaconList, state.filteredBeacons, metadata, state.rssiLpfAlpha);
             const calculated = this.calculatePositions(
                 filteredBeacons,
@@ -58,12 +60,14 @@ class App extends Component {
                 state.positions,
                 metadata.receivedAt,
                 'MQTT message',
-                state.positionLpfAlpha
+                state.positionLpfAlpha,
+                devices
             );
             return {
                 beacons: beaconList,
+                devices,
                 filteredBeacons,
-                sortedBeacons: this.beaconMacList(beaconList),
+                sortedBeacons: this.beaconMacList(beaconList, devices),
                 stations,
                 positions: calculated.positions,
                 trajectories: calculated.trajectories,
@@ -79,10 +83,12 @@ class App extends Component {
 
     filterRssiReadings = (rawBeacons, previousFiltered, metadata, alpha) => {
         const filtered = Object.fromEntries(
-            Object.entries(previousFiltered).map(([mac, readings]) => [mac, {...readings}])
+            Object.entries(previousFiltered)
+                .filter(([mac]) => rawBeacons[mac])
+                .map(([mac, readings]) => [mac, {...readings}])
         );
 
-        metadata.beaconMacs.forEach(mac => {
+        metadata.deviceMacs.forEach(mac => {
             const rawReading = rawBeacons[mac]?.[metadata.stationMac];
             if (!rawReading) return;
             const previous = previousFiltered[mac]?.[metadata.stationMac];
@@ -108,53 +114,57 @@ class App extends Component {
 
     toggleVisibility = () => this.setState({ visible: !this.state.visible });
 
-    beaconMacList = (b) => {
-        const objectList = {};
-        if(typeof b === 'undefined' || Object.keys(b).length === 0) {
+    beaconMacList = (observations, devices) => {
+        if(typeof observations === 'undefined' || Object.keys(observations).length === 0) {
             return [];
         }
 
-        for (let beacon in b) {
-            for (let mac in b[beacon]) {
-                if(typeof objectList[mac] !== 'undefined'){
-                    if(objectList[mac].rssi < b[beacon][mac].rssi) {
-                        objectList[mac] = b[beacon][mac];
-                    }
-                } else {
-                    objectList[mac] = b[beacon][mac];
-                }
-            }
-        }
-
-        return Object.keys(objectList).map(beacon => ({
-            mac: beacon,
-            rssi: objectList[beacon].rssi,
-            timestamp: objectList[beacon].timestamp
-        })).sort(function(a, b) {
-            return a.rssi - b.rssi;
-        }).reverse();
+        return Object.entries(observations).map(([mac, readings]) => {
+            const strongest = Object.values(readings).sort((a, b) => b.rssi - a.rssi)[0];
+            return {...(devices[mac] || {}), mac, rssi: strongest.rssi, timestamp: strongest.timestamp};
+        }).sort((a, b) => {
+            if (a.kind === 'healthband' && b.kind !== 'healthband') return -1;
+            if (b.kind === 'healthband' && a.kind !== 'healthband') return 1;
+            return b.rssi - a.rssi;
+        });
     };
 
-    updateStationMacList = (b, currentStations) => {
-        if(typeof b === 'undefined' || Object.keys(b).length === 0) {
-            return currentStations;
-        }
-
+    updateStationMacList = (stationMac, currentStations) => {
         const stations = {...currentStations};
-        for (let beacon in b) {
-            for (let station in b[beacon]) {
-                if(typeof stations[station] === 'undefined') {
-                    stations[station] = {
-                        x:Math.floor((Math.random() * 500) + 1),
-                        y:Math.floor((Math.random() * 300) + 1)
-                    };
-                }
-            }
+        if (stationMac && typeof stations[stationMac] === 'undefined') {
+            stations[stationMac] = {
+                x:Math.floor((Math.random() * 500) + 1),
+                y:Math.floor((Math.random() * 300) + 1)
+            };
         }
         return stations;
     };
 
     updateDimensions = () => this.setState({height: window.innerHeight, width: window.innerWidth});
+
+    updateClock = () => this.setState(state => {
+        const clock = Date.now();
+        const positions = {...state.positions};
+        const pixelsPerMeter = state.width / state.widthMeters;
+        Object.keys(state.filteredBeacons).forEach(mac => {
+            if (!positions[mac]?.position) return;
+            const freshness = locateWithDebug(state.filteredBeacons[mac], state.stations, pixelsPerMeter, {
+                now: clock,
+                txPower: state.devices[mac]?.txPower
+            });
+            if (!freshness.position) {
+                positions[mac] = {
+                    ...positions[mac],
+                    ...freshness,
+                    rawPosition: null,
+                    position: null,
+                    updatedAt: clock,
+                    source: 'Observation freshness timeout'
+                };
+            }
+        });
+        return {clock, positions};
+    });
 
     updateStationPosition = ({mac, x, y}) => {
         this.setState(state => {
@@ -167,19 +177,23 @@ class App extends Component {
                 state.positions,
                 Date.now(),
                 `Station ${mac} moved`,
-                state.positionLpfAlpha
+                state.positionLpfAlpha,
+                state.devices
             );
             return {stations, positions: calculated.positions, trajectories: calculated.trajectories};
         });
     };
 
-    calculatePositions = (beacons, stations, existingTrajectories, previousPositions, updatedAt, source, positionAlpha) => {
+    calculatePositions = (beacons, stations, existingTrajectories, previousPositions, updatedAt, source, positionAlpha, devices) => {
         const positions = {};
         const trajectories = {...existingTrajectories};
         const pixelsPerMeter = this.state ? this.state.width / this.state.widthMeters : window.innerWidth / 8.5;
 
         Object.keys(beacons).forEach(mac => {
-            const result = locateWithDebug(beacons[mac], stations, pixelsPerMeter);
+            const result = locateWithDebug(beacons[mac], stations, pixelsPerMeter, {
+                now: updatedAt,
+                txPower: devices[mac]?.txPower
+            });
             const rawPosition = result.position;
             const previousPosition = previousPositions[mac]?.position;
             const position = rawPosition && previousPosition ? {
@@ -217,7 +231,8 @@ class App extends Component {
             {},
             Date.now(),
             'LPF reset',
-            state.positionLpfAlpha
+            state.positionLpfAlpha,
+            state.devices
         );
         return {filteredBeacons, positions: calculated.positions};
     });
@@ -228,7 +243,7 @@ class App extends Component {
     componentDidMount() {
         this.messageStack = new MessageStack(this.receiver, this.handleMqttStatus);
         window.addEventListener('resize', this.updateDimensions);
-        this.clockTimer = window.setInterval(() => this.setState({clock: Date.now()}), 1000);
+        this.clockTimer = window.setInterval(this.updateClock, 1000);
     }
 
     componentWillUnmount() {
@@ -246,6 +261,7 @@ class App extends Component {
                         <Menu.Item name='beacons'>
                             <KnownBeaconsList
                                 beacons={this.state.sortedBeacons}
+                                devices={this.state.devices}
                                 observations={this.state.beacons}
                                 filteredObservations={this.state.filteredBeacons}
                                 positions={this.state.positions}
@@ -272,7 +288,7 @@ class App extends Component {
                     </Sidebar>
                     <Sidebar.Pusher>
                         <Container style={{width:this.state.width+'px',height:this.state.height+'px'}} fluid>
-                            <Floorplan positions={this.state.positions} trajectories={this.state.trajectories} stations={this.state.stations} height={this.state.height} width={this.state.width} onStationPositionChange={this.updateStationPosition} />
+                            <Floorplan positions={this.state.positions} trajectories={this.state.trajectories} devices={this.state.devices} stations={this.state.stations} height={this.state.height} width={this.state.width} onStationPositionChange={this.updateStationPosition} />
                             <Icon style={{position:'absolute'}} onClick={this.toggleVisibility} className={'menubutton'} name='sidebar' size='large' />
                         </Container>
                     </Sidebar.Pusher>

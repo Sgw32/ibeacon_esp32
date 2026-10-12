@@ -1,5 +1,6 @@
 import mqtt from "mqtt";
 import conf from './config';
+import { createObservationStore, ingestObservationMessage } from './ObservationStore.js';
 
 class MessageContainer {
 
@@ -7,59 +8,24 @@ class MessageContainer {
         this.callbackFunc = callbackFunc;
         this.statusCallback = statusCallback;
         this.errors = [];
-        this.beacons = {};
-        this.stations = [];
+        this.observationStore = createObservationStore();
 
         // This function keep only one record of each beacon
         this.processMessage = function (topic, message) {
             // message is Buffer
             let payload = message.toString();
             //console.log(payload);
-            let msg;
             try {
-                msg = JSON.parse(payload);
-            } catch (error){
-                msg = null;
-                console.log(error.message);
-            }
-
-            if(msg !== null && Array.isArray(msg.e) && typeof msg.st === 'string') {
-                for(let i=0; i<msg.e.length;i++) {
-                    let mac = msg.e[i].m.toLowerCase();
-                    let station = msg.st.toLowerCase();
-                    if(this.stations.includes(station)) {
-
-                    } else {
-                        this.stations.push(station);
-                    }
-                    if(this.stations.includes(mac)) {
-                        // Dont measure stations rssi
-                        // with other stations.
-                    } else {
-                        if (typeof this.beacons[mac] !== 'object') {
-                            // Initialize
-                            this.beacons[mac] = {};
-                        } else if (typeof this.beacons[mac][station] === 'object') {
-                            // Remove old record
-                            delete this.beacons[mac][station];
-                        }
-                        // Insert new record
-                        this.beacons[mac][station] = {
-                            rssi: parseInt(msg.e[i].r, 10),
-                            timestamp: Date.now()
-                        }
-                    }
-                }
-                this.callbackFunc({...this.beacons}, {
+                const result = ingestObservationMessage(this.observationStore, payload);
+                this.callbackFunc(result.beacons, {
+                    ...result.metadata,
+                    devices: result.devices,
                     topic,
-                    receivedAt: Date.now(),
-                    eventCount: msg.e.length,
-                    stationMac: msg.st.toLowerCase(),
-                    beaconMacs: msg.e.map(event => event.m.toLowerCase()),
                     payload
                 });
-            } else if (msg !== null) {
-                this.statusCallback('error', 'Message does not contain st and e fields');
+            } catch (error){
+                console.log(error.message);
+                this.statusCallback('error', error.message);
             }
         };
 

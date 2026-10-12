@@ -17,6 +17,7 @@ export const trilaterate = (points) => {
 
 export const DEFAULT_TX_POWER = -69;
 export const DEFAULT_PATH_LOSS_EXPONENT = 3;
+export const DEFAULT_MAX_OBSERVATION_AGE_MS = 20000;
 
 export const lowPass = (previousValue, currentValue, alpha) =>
     alpha * currentValue + (1 - alpha) * previousValue;
@@ -24,7 +25,7 @@ export const lowPass = (previousValue, currentValue, alpha) =>
 export const calculateDistance = (rssi, txPower = DEFAULT_TX_POWER, pathLossExponent = DEFAULT_PATH_LOSS_EXPONENT) =>
     Math.pow(10, ((txPower - rssi) / (10 * pathLossExponent)));
 
-export const locateWithDebug = (beacon, stations, pixelsPerMeter) => {
+export const locateWithDebug = (beacon, stations, pixelsPerMeter, options = {}) => {
 
     // ITAG -70 ... -94
     // Samsung -73 ... -95
@@ -33,31 +34,31 @@ export const locateWithDebug = (beacon, stations, pixelsPerMeter) => {
     // n = 2...4
     // d = 10^(TxPower - RSSI) / (10 * n))
 
-    console.log("========== POSITION CALC ==========");
-    console.log("Beacon observations:", beacon);
-    console.log("Available stations:", stations);
-    console.log("Beacon station MACs:", Object.keys(beacon));
-    console.log("Station MACs:", Object.keys(stations));
-    console.log("pixelsPerMeter:", pixelsPerMeter);
-
-    const keysSorted = Object.keys(beacon).filter(key => stations[key]).sort(function (a, b) {
+    const now = options.now ?? Date.now();
+    const maxObservationAgeMs = options.maxObservationAgeMs ?? DEFAULT_MAX_OBSERVATION_AGE_MS;
+    const txPower = options.txPower ?? DEFAULT_TX_POWER;
+    const pathLossExponent = options.pathLossExponent ?? DEFAULT_PATH_LOSS_EXPONENT;
+    const stationKeys = Object.keys(beacon).filter(key => stations[key]);
+    const freshStationKeys = stationKeys.filter(key => {
+        const timestamp = beacon[key].timestamp;
+        return !Number.isFinite(timestamp) || now - timestamp <= maxObservationAgeMs;
+    });
+    const keysSorted = freshStationKeys.sort(function (a, b) {
         return beacon[a].rssi - beacon[b].rssi
     }).reverse().slice(0, 3);
-
-    console.log("Matched/selected stations:", keysSorted);
-    console.log("Selected count:", keysSorted.length);
 
     if (keysSorted.length < 3) {
         return {
             position: null,
-            status: `Need 3 positioned stations; have ${keysSorted.length}`,
+            status: `Need 3 fresh positioned stations; have ${keysSorted.length}`,
             selectedStations: keysSorted,
-            measurements: []
+            measurements: [],
+            staleStationCount: stationKeys.length - freshStationKeys.length
         };
     }
 
     const measurements = keysSorted.map(stationMac => {
-        const distanceMeters = calculateDistance(beacon[stationMac].rssi);
+        const distanceMeters = calculateDistance(beacon[stationMac].rssi, txPower, pathLossExponent);
         return {
             stationMac,
             stationX: Number(stations[stationMac].x),
@@ -77,7 +78,8 @@ export const locateWithDebug = (beacon, stations, pixelsPerMeter) => {
             position: null,
             status: 'Station positions are collinear or invalid',
             selectedStations: keysSorted,
-            measurements
+            measurements,
+            staleStationCount: stationKeys.length - freshStationKeys.length
         };
     }
 
@@ -89,10 +91,12 @@ export const locateWithDebug = (beacon, stations, pixelsPerMeter) => {
         status: 'Position calculated',
         selectedStations: keysSorted,
         measurements,
+        staleStationCount: stationKeys.length - freshStationKeys.length,
         parameters: {
-            txPower: DEFAULT_TX_POWER,
-            pathLossExponent: DEFAULT_PATH_LOSS_EXPONENT,
-            pixelsPerMeter
+            txPower,
+            pathLossExponent,
+            pixelsPerMeter,
+            maxObservationAgeMs
         }
     };
 };

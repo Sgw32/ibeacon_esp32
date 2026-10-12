@@ -9,3 +9,14 @@
     opacity: 1;
     font-size: 12px;
 }
+
+.healthband-icon {
+    filter: drop-shadow(0 0 5px #db2828);
+}
+
+.healthband-icon text {
+    fill: #b21e1e;
+    font-weight: bold;
+    opacity: 1;
+    font-size: 12px;
+}

@@ -22,20 +22,52 @@
 // }
 // #endif
 
-//Scan time must be longer than beacon interval
-int beaconScanTime = 4;
+// Scan time must be longer than the wearable/beacon advertising interval.
+const int beaconScanTime = 4;
+const uint8_t maxTrackedDevices = 50;
+const size_t mqttBufferSize = 8192;
+const char* healthBandNamePrefix = "HealthBand";
+// Calibrate this by measuring the wearable RSSI at one metre in the intended
+// mounting/orientation. It is not the radio's configured transmit level.
+const int healthBandRssiAtOneMeter = -69;
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-// We collect each device MAC and RSSI
+// We collect one (strongest) sample per device during each scan. The advertised
+// name lets the dashboard distinguish the HealthBand wearable from ordinary
+// beacons without making the wearable connect to the receiver stations.
 typedef struct {
-  char address[17];   // 67:f1:d2:04:cd:5d
+  char address[18];   // 67:f1:d2:04:cd:5d plus terminator
   int rssi;
+  char name[32];
+  bool isHealthBand;
 } BeaconData;
 
 uint8_t bufferIndex = 0;  // Found devices counter
-BeaconData buffer[50];    // Buffer to store found device data
-uint8_t message_char_buffer[MQTT_MAX_PACKET_SIZE];
+BeaconData buffer[maxTrackedDevices];
+uint8_t message_char_buffer[mqttBufferSize];
+
+bool hasPrefixIgnoreCase(const String& value, const char* prefix) {
+  String normalizedValue = value;
+  String normalizedPrefix = String(prefix);
+  normalizedValue.toLowerCase();
+  normalizedPrefix.toLowerCase();
+  return normalizedValue.startsWith(normalizedPrefix);
+}
+
+void appendJsonString(String& output, const char* value) {
+  output += '"';
+  while (*value) {
+    const char current = *value++;
+    if (current == '"' || current == '\\') {
+      output += '\\';
+    }
+    if (static_cast<uint8_t>(current) >= 0x20) {
+      output += current;
+    }
+  }
+  output += '"';
+}
 
 /*
  * Construct SenML compatible message with multiple measurements
@@ -51,22 +83,37 @@ public:
   void onResult(BLEAdvertisedDevice advertisedDevice) {
     extern uint8_t bufferIndex;
     extern BeaconData buffer[];
-    if(bufferIndex >= 50) {
-      return;
+    const String address = advertisedDevice.getAddress().toString().c_str();
+    const int rssi = advertisedDevice.haveRSSI() ? advertisedDevice.getRSSI() : 0;
+    uint8_t index = bufferIndex;
+    for (uint8_t i = 0; i < bufferIndex; i++) {
+      if (address.equalsIgnoreCase(buffer[i].address)) {
+        index = i;
+        break;
+      }
     }
-    // RSSI
-    if(advertisedDevice.haveRSSI()) {
-      buffer[bufferIndex].rssi = advertisedDevice.getRSSI();
-    } else { buffer[bufferIndex].rssi =  0; }
-    
-    // MAC is mandatory for BT to work
-    strcpy (buffer[bufferIndex].address, advertisedDevice.getAddress().toString().c_str());
-    
-    bufferIndex++;
+    if (index == bufferIndex) {
+      if (bufferIndex >= maxTrackedDevices) {
+        return;
+      }
+      memset(&buffer[index], 0, sizeof(BeaconData));
+      strlcpy(buffer[index].address, address.c_str(), sizeof(buffer[index].address));
+      buffer[index].rssi = rssi;
+      bufferIndex++;
+    } else if (rssi > buffer[index].rssi) {
+      buffer[index].rssi = rssi;
+    }
+
+    if (advertisedDevice.haveName()) {
+      const String name = advertisedDevice.getName().c_str();
+      strlcpy(buffer[index].name, name.c_str(), sizeof(buffer[index].name));
+      buffer[index].isHealthBand = hasPrefixIgnoreCase(name, healthBandNamePrefix);
+    }
     // Print everything via serial port for debugging
-    Serial.printf("MAC: %s \n", advertisedDevice.getAddress().toString().c_str());
-    Serial.printf("name: %s \n", advertisedDevice.getName().c_str());
-    Serial.printf("RSSI: %d \n", advertisedDevice.getRSSI());   
+    Serial.printf("MAC: %s \n", address.c_str());
+    Serial.printf("name: %s \n", buffer[index].name);
+    Serial.printf("kind: %s \n", buffer[index].isHealthBand ? "healthband" : "beacon");
+    Serial.printf("RSSI: %d \n", rssi);
   }
 };
 
@@ -102,8 +149,9 @@ void setup() {
   // Lower BLE power consumption improves stability with external USB power adapters
   esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P3); // Reduce BLE power
   
-  // Set MQTT buffer size to 2048 bytes
-  client.setBufferSize(2048);
+  // Names and identity metadata make reports larger than the legacy {m,r}
+  // payload, especially in busy rooms.
+  client.setBufferSize(mqttBufferSize);
   
   // Additional delay after BLE init
   delay(2000);
@@ -257,13 +305,25 @@ void loop() {
     yield();
     
     // Build and send payload
-    String payloadString = "{\"e\":[";
+    String payloadString = "{\"v\":2,\"e\":[";
+    payloadString.reserve(mqttBufferSize);
     for(uint8_t i = 0; i < bufferIndex; i++) {
       payloadString += "{\"m\":\"";
       payloadString += String(buffer[i].address);
-      payloadString += "\",\"r\":\"";
+      payloadString += "\",\"r\":";
       payloadString += String(buffer[i].rssi);
-      payloadString += "\"}";
+      payloadString += ",\"k\":\"";
+      payloadString += (buffer[i].isHealthBand ? "healthband" : "beacon");
+      payloadString += '"';
+      if (buffer[i].name[0] != '\0') {
+        payloadString += ",\"n\":";
+        appendJsonString(payloadString, buffer[i].name);
+      }
+      if (buffer[i].isHealthBand) {
+        payloadString += ",\"p\":";
+        payloadString += String(healthBandRssiAtOneMeter);
+      }
+      payloadString += '}';
       if(i < bufferIndex-1) {
         payloadString += ',';
       }
@@ -283,6 +343,12 @@ void loop() {
     Serial.println("Payload: ");
     Serial.println(payloadString);
     
+    if (payloadString.length() >= mqttBufferSize) {
+      Serial.println("Payload exceeds MQTT buffer; skipping publish");
+      bufferIndex = 0;
+      delay(2000);
+      return;
+    }
     payloadString.getBytes(message_char_buffer, payloadString.length()+1);
     
     // Try to publish with retry logic and better error handling

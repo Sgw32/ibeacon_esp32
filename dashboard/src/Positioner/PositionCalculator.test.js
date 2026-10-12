@@ -31,7 +31,7 @@ describe('position debugging', () => {
         );
 
         expect(result.position).toBeNull();
-        expect(result.status).toContain('Need 3 positioned stations');
+        expect(result.status).toContain('Need 3 fresh positioned stations');
     });
 
     it('converts RSSI to a distance using the configured radio model', () => {
@@ -41,5 +41,45 @@ describe('position debugging', () => {
     it('applies the configured low-pass coefficient', () => {
         expect(lowPass(-80, -60, 0.25)).toBeCloseTo(-75);
         expect(lowPass(10, 20, 1)).toBe(20);
+    });
+
+    it('does not combine stale receiver readings into a moving-device position', () => {
+        const result = locateWithDebug(
+            {
+                station1: {rssi: -70, timestamp: 1000},
+                station2: {rssi: -70, timestamp: 29000},
+                station3: {rssi: -70, timestamp: 30000}
+            },
+            {
+                station1: {x: 0, y: 0},
+                station2: {x: 100, y: 0},
+                station3: {x: 0, y: 100}
+            },
+            100,
+            {now: 30000, maxObservationAgeMs: 20000}
+        );
+
+        expect(result.position).toBeNull();
+        expect(result.staleStationCount).toBe(1);
+    });
+
+    it('uses target-specific one-metre RSSI calibration when supplied', () => {
+        const result = locateWithDebug(
+            {
+                station1: {rssi: -59},
+                station2: {rssi: -59},
+                station3: {rssi: -59}
+            },
+            {
+                station1: {x: 0, y: 0},
+                station2: {x: 100, y: 0},
+                station3: {x: 0, y: 100}
+            },
+            100,
+            {txPower: -59}
+        );
+
+        expect(result.measurements[0].distanceMeters).toBeCloseTo(1);
+        expect(result.parameters.txPower).toBe(-59);
     });
 });

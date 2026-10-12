@@ -12,10 +12,14 @@ import './BeaconPin.css';
 class Pin extends React.Component {
 
     render() {
+        const isHealthBand = this.props.device?.kind === 'healthband';
+        const label = isHealthBand
+            ? `${this.props.device?.name || 'HealthBand'} (${this.props.mac.toUpperCase()})`
+            : this.props.device?.name || this.props.mac.toUpperCase();
         let width = this.props.width || 100;
         let height = this.props.height || 40;
         return (
-            <svg className="beacon-icon"
+            <svg className={`beacon-icon ${isHealthBand ? 'healthband-icon' : ''}`}
                  id={this.props.mac}
                  viewBox={"0 0 " + width + " " + height}
                  width={width}
@@ -23,8 +27,9 @@ class Pin extends React.Component {
                  x={this.props.x}
                  y={this.props.y}
             >
+                <title>{label}</title>
                 <StreetView preserveAspectRatio="xMaxYMax meet"/>
-                <text x="0" y="40px">{this.props.mac.toUpperCase()}</text>
+                <text x="0" y="40px">{label}</text>
             </svg>
         );
     }

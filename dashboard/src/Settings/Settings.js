@@ -19,6 +19,7 @@ class SettingsSidemenu extends Component {
     toggleMac = (mac) => this.setState(state => ({expandedMac: state.expandedMac === mac ? null : mac}));
 
     renderBeaconDetails(mac) {
+        const device = this.props.devices[mac] || {};
         const observations = this.props.observations[mac] || {};
         const filteredObservations = this.props.filteredObservations[mac] || {};
         const calculation = this.props.positions[mac];
@@ -30,13 +31,16 @@ class SettingsSidemenu extends Component {
             <div className="debug-details">
                 <dl>
                     <dt>Calculation</dt><dd>{calculation?.status || 'Waiting for data'}</dd>
+                    <dt>Target type</dt><dd>{device.kind === 'healthband' ? 'HealthBand wearable' : 'BLE beacon/device'}</dd>
+                    <dt>Advertised name</dt><dd>{device.name || '—'}</dd>
                     <dt>Position</dt><dd>{calculation?.position ? `${calculation.position.x.toFixed(1)}, ${calculation.position.y.toFixed(1)} px` : 'not available'}</dd>
                     <dt>Raw position</dt><dd>{calculation?.rawPosition ? `${calculation.rawPosition.x}, ${calculation.rawPosition.y} px` : 'not available'}</dd>
                     <dt>Position updated</dt><dd>{calculation ? `${formatTime(calculation.updatedAt)} (${formatAge(calculation.updatedAt, this.props.clock)})` : 'never'}</dd>
                     <dt>Update trigger</dt><dd>{calculation?.source || '—'}</dd>
                     <dt>Trajectory points</dt><dd>{trajectory.length}</dd>
-                    <dt>Tx power</dt><dd>{calculation?.parameters ? `${calculation.parameters.txPower} dBm` : '-69 dBm'}</dd>
+                    <dt>RSSI at 1 metre</dt><dd>{calculation?.parameters ? `${calculation.parameters.txPower} dBm` : '-69 dBm'}</dd>
                     <dt>Path-loss exponent</dt><dd>{calculation?.parameters?.pathLossExponent ?? 3}</dd>
+                    <dt>Stale receiver readings</dt><dd>{calculation?.staleStationCount ?? 0}</dd>
                     <dt>Scale</dt><dd>{calculation?.parameters ? `${calculation.parameters.pixelsPerMeter.toFixed(2)} px/m` : '—'}</dd>
                 </dl>
                 <div className="debug-subheading">Station measurements</div>
@@ -65,7 +69,7 @@ class SettingsSidemenu extends Component {
         const {expandedMac} = this.state;
         return (
             <div className="debug-panel">
-                <h3><Icon name="bug" /> Live debug</h3>
+                <h3><Icon name="map marker alternate" /> Location monitor</h3>
                 <div className={`mqtt-status ${this.props.mqttStatus}`}>
                     <span className="status-dot" /> MQTT {this.props.mqttStatus}
                 </div>
@@ -91,7 +95,8 @@ class SettingsSidemenu extends Component {
                     <dt>Topic</dt><dd>{this.props.lastTopic || '—'}</dd>
                     <dt>Last station</dt><dd>{this.props.lastStationMac || '—'}</dd>
                     <dt>Messages / events</dt><dd>{this.props.messageCount} / {this.props.eventCount}</dd>
-                    <dt>Stations / beacons</dt><dd>{Object.keys(this.props.stations).length} / {this.props.beacons.length}</dd>
+                    <dt>Receivers / targets</dt><dd>{Object.keys(this.props.stations).length} / {this.props.beacons.length}</dd>
+                    <dt>HealthBand targets</dt><dd>{this.props.beacons.filter(device => device.kind === 'healthband').length}</dd>
                 </dl>
                 {this.props.lastPayload && (
                     <details className="raw-message">
@@ -102,12 +107,12 @@ class SettingsSidemenu extends Component {
                 <Button compact size="tiny" onClick={this.props.onClearTrajectories} disabled={Object.keys(this.props.trajectories).length === 0}>
                     <Icon name="trash" /> Clear trajectories
                 </Button>
-                <div className="debug-hint">Click a MAC for calculation details. Drag bullseyes on the map to update receiver-station positions.</div>
+                <div className="debug-hint">HealthBand is located from RSSI reported by at least three fixed ESP32 receivers. Drag bullseyes to set receiver positions.</div>
                 <ul className="all-beacons-list">
                     {this.props.beacons.map(beacon => (
                         <li key={beacon.mac}>
                             <button className="debug-mac" onClick={() => this.toggleMac(beacon.mac)} aria-expanded={expandedMac === beacon.mac}>
-                                <span>{beacon.mac}</span>
+                                <span>{beacon.kind === 'healthband' ? <Label size="mini" color="red">HealthBand</Label> : <Label size="mini">Beacon</Label>} {beacon.name || beacon.mac}</span>
                                 <span>{beacon.rssi} dBm <Icon name={expandedMac === beacon.mac ? 'chevron up' : 'chevron down'} /></span>
                             </button>
                             {expandedMac === beacon.mac && this.renderBeaconDetails(beacon.mac)}
